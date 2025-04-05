@@ -1,0 +1,119 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String    @unique
+  emailVerified  DateTime?
+  image          String?
+  password       String?   // Hashed password for email/password auth
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  apiKeys        ApiKey[]
+  projects       Project[]
+  accounts       Account[]
+  sessions       Session[]
+}
+
+// OAuth accounts connected to users
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+// User sessions for authentication
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// API keys for different services (Notion, Anthropic)
+model ApiKey {
+  id        String   @id @default(cuid())
+  name      String   // Name/label for the key
+  service   String   // 'notion', 'claude', etc.
+  key       String   @db.Text // Encrypted API key
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Owner of the API key
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Projects generated from Notion pages
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  status      String   // 'draft', 'deployed', 'archived'
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Notion page IDs used for this project
+  notionPages String[] // Array of Notion page IDs
+  
+  // Generated code content
+  codeContent String?  @db.Text
+  
+  // Owner of the project
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Deployments of this project
+  deployments Deployment[]
+}
+
+// Deployments of projects
+model Deployment {
+  id          String   @id @default(cuid())
+  version     Int
+  status      String   // 'building', 'deployed', 'failed'
+  url         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Environment variables for this deployment
+  environmentVars Json?
+  
+  // Analytics data collected for this deployment
+  analyticsData  Json?
+  
+  // Project this deployment belongs to
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
