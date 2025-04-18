@@ -1,0 +1,10 @@
+# Query: 40425
+# ContextLines: 1
+
+1 result - 1 file
+
+foundation/src/app/api/ai/connect/route.ts:
+  71          models: transformedModels,
+  72:         defaultModel: 'claude-3-7-sonnet-20250219
+'
+  73        });
