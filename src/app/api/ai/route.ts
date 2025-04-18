@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getActiveApiKeyForService } from '@/lib/services/apiKeyService';
 import { getNotionPageContent, getPageWithSubpages } from '@/lib/api/notion';
+import { getCurrentUser } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 
 // Initialize Anthropic client with environment API key
 const anthropic = new Anthropic({
@@ -10,52 +12,71 @@ const anthropic = new Anthropic({
 
 export async function POST(request: Request) {
   try {
-    // For NextAuth v5, we would typically use auth() instead of getServerSession
-    // This is a simplified implementation that just mocks a session
-    const session = { user: { id: 'test-user-id' } };
+    // Extract request body
+    const { pages, projectType } = await request.json();
     
-    // Check if user is authenticated
-    if (!session || !session.user) {
+    // Get authenticated user
+    const session = await auth() || { user: null };
+    const user = session.user;
+    
+    if (!user || !user.id) {
       return NextResponse.json(
-        { error: 'You must be logged in to use AI features' },
+        { error: 'You must be logged in to generate a prototype' },
         { status: 401 }
       );
     }
     
-    const body = await request.json();
-    const { pages, projectType } = body;
+    // Log user information
+    console.log(`Generating prototype for user: ${user.id}`);
+    console.log(`Project type selected: ${projectType}`);
+    console.log(`Selected pages: ${pages.length}`);
     
+    // Check if we have valid Notion page IDs
     if (!pages || !Array.isArray(pages) || pages.length === 0) {
       return NextResponse.json(
-        { error: 'At least one Notion page is required' },
+        { error: 'Please select at least one Notion page' },
         { status: 400 }
       );
     }
     
-    try {
-      // Get Claude API key from environment (already initialized in anthropic client)
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+    // Attempt to get the user's Notion API key
+    const notionApiKey = await getActiveApiKeyForService(user.id, 'notion');
+    
+    if (!notionApiKey) {
+      return NextResponse.json(
+        { error: 'Notion API key not found. Please connect your Notion account.' },
+        { status: 401 }
+      );
+    }
+    
+    // Log API key validation (mask for security)
+    console.log('Using Notion API key:', notionApiKey.substring(0, 7) + '...' + notionApiKey.substring(notionApiKey.length - 4));
+    
+    // Attempt to get Claude API key from environment or user settings
+    let claudeApiKey = process.env.ANTHROPIC_API_KEY;
+    
+    if (!claudeApiKey) {
+      // Try to get from user's stored API keys
+      console.log('No Claude API key in environment, trying user API key...');
+      const userApiKey = await getActiveApiKeyForService(user.id, 'anthropic');
       
-      if (!apiKey) {
+      if (!userApiKey) {
         return NextResponse.json(
           { error: 'Claude API key not found' },
-          { status: 400 }
+          { status: 401 }
         );
       }
       
+      claudeApiKey = userApiKey;
+      console.log('Found user Claude API key');
+    } else {
+      console.log('Using environment Claude API key');
+    }
+    
+    try {
       // Log API key validation (mask for security)
-      console.log('Using API key:', apiKey.substring(0, 7) + '...' + apiKey.substring(apiKey.length - 4));
-      console.log('API key format check:', apiKey.startsWith('sk-ant'));
-      
-      // Get Notion API key from headers
-      const notionApiKey = request.headers.get('Notion-API-Key');
-      
-      if (!notionApiKey) {
-        return NextResponse.json(
-          { error: 'Notion API key not found. Please reconnect to Notion.' },
-          { status: 400 }
-        );
-      }
+      console.log('Using Claude API key:', claudeApiKey.substring(0, 7) + '...' + claudeApiKey.substring(claudeApiKey.length - 4));
+      console.log('API key format check:', claudeApiKey.startsWith('sk-ant'));
       
       // Fetch content from selected Notion pages including subpages
       console.log(`Fetching content for ${pages.length} Notion pages and their subpages`);
@@ -288,7 +309,20 @@ export async function POST(request: Request) {
       9. Add comprehensive error handling and user feedback mechanisms
       10. Ensure components are responsive and follow accessibility best practices
       
-      The goal is to deliver production-ready code that could be immediately integrated into a working application. The user should be able to copy this code directly into their project and have it work as specified in the documentation.`;
+      IMPORTANT: You MUST format your response as a valid JSON object following this structure:
+      {
+        "files": {
+          "app/page.tsx": "import React from 'react';\n\nexport default function Home() {\n  return <div>Hello World</div>;\n}",
+          "components/Button.tsx": "import React from 'react';\n\nexport default function Button() {\n  return <button>Click Me</button>;\n}"
+        }
+      }
+      
+      The JSON object should have a single "files" property containing a dictionary where:
+      - Each key is a file path (relative to the project root)
+      - Each value is the complete file content as a string with proper escaping
+      - Include ALL necessary files to make the prototype functional
+
+      No other commentary or explanation should be included - ONLY the JSON object.`;
       
       // Prepare user prompt with the formatted Notion content
       const userPrompt = `I need you to create a complete, functional ${projectType} prototype based on the following Notion documentation:
@@ -302,6 +336,31 @@ export async function POST(request: Request) {
       3. All form validation and error handling
       4. Loading states and user feedback
       5. Proper TypeScript types for all components and functions
+      
+      CRITICAL: Your ENTIRE response must be a valid, parseable JSON object with this EXACT structure:
+      {
+        "files": {
+          "filepath1": "complete file content as string",
+          "filepath2": "complete file content as string",
+          ...
+        }
+      }
+      
+      For example:
+      {
+        "files": {
+          "app/page.tsx": "import React from 'react';\n\nexport default function Home() {\n  return <div>Hello World</div>;\n}",
+          "components/ProductList.tsx": "import React from 'react';\n\nexport interface Product {\n  id: string;\n  name: string;\n  price: number;\n}\n\nexport default function ProductList() {\n  return <div>Products will be listed here</div>;\n}"
+        }
+      }
+      
+      Your response MUST:
+      1. Be valid JSON that can be parsed with JSON.parse()
+      2. Include ALL necessary files (components, styles, types, API routes) in the "files" dictionary
+      3. Organize files according to Next.js conventions (pages in app directory, components in components directory)
+      4. Make each file complete with all required imports and dependencies
+      5. Use proper escaping for special characters in strings
+      6. NOT include any comments, explanations, or text outside the JSON structure
       
       The code should follow best practices for a Next.js application and be ready to integrate directly into our project. Focus on delivering a complete, working solution that implements everything specified in the documentation.`;
       
@@ -322,6 +381,8 @@ export async function POST(request: Request) {
       // Extract the generated code from Claude's response
       // The content field is an array of content blocks
       let generatedContent = '';
+
+      console.log('Claude response content:', JSON.stringify(response.content));
       
       // Each content block has a type, only process text blocks
       if (response.content && response.content.length > 0) {
@@ -332,67 +393,86 @@ export async function POST(request: Request) {
         }
       }
       
-      // Find code blocks in Claude's response (assuming markdown code blocks)
-      const codeBlockRegex = /```(?:jsx|tsx|javascript|typescript)?\n([\s\S]*?)```/g;
-      const matches = [...generatedContent.matchAll(codeBlockRegex)];
+      console.log('Raw content from Claude:', generatedContent.substring(0, 200) + '...');
       
-      let generatedCode = "";
+      // Try to parse the JSON response directly from Claude's content
+      let generatedCode = generatedContent;
       
-      if (matches.length > 0) {
-        // Extract the first code block
-        generatedCode = matches[0][1].trim();
-      } else {
-        // Fallback if no code block is found
-        generatedCode = generatedContent;
+      // After getting the Claude API response
+      const completion = generatedCode;
+      
+      // Try to parse the JSON response
+      let parsedFiles;
+      try {
+        // Extract the JSON object from the response
+        // Sometimes Claude might wrap the JSON in markdown code blocks or add explanation text
+        const jsonMatch = completion.match(/\{[\s\S]*\}/);
+        const jsonString = jsonMatch ? jsonMatch[0] : completion;
+        
+        // First try to parse as JSON directly
+        try {
+          const parsedResponse = JSON.parse(jsonString);
+          
+          if (parsedResponse.files && typeof parsedResponse.files === 'object') {
+            parsedFiles = parsedResponse.files;
+            console.log(`Successfully parsed ${Object.keys(parsedFiles).length} files from Claude response`);
+            
+            // Return the structured files as JSON
+            return NextResponse.json({ 
+              code: JSON.stringify({ files: parsedFiles }, null, 2),
+              message: 'Successfully generated prototype code'
+            });
+          }
+        } catch (jsonError) {
+          console.log('Failed to parse direct JSON response:', jsonError);
+          // Continue to fallback parsing
+        }
+        
+        // Fallback: Try to parse the files manually from the code block format
+        console.log('Falling back to manual file extraction');
+        parsedFiles = {} as Record<string, string>;
+        
+        // Extract file blocks manually
+        const fileBlockPattern = /\/\/\s*File:\s*([^\n]+)(?:\n|\r\n?)(?:```(?:jsx|tsx|javascript|typescript|css|json|html)?(?:\n|\r\n?)([\s\S]*?)```|([^/]*?)(?=\/\/\s*File:|$))/g;
+        const fileMatches = [...completion.matchAll(fileBlockPattern)];
+        
+        if (fileMatches.length > 0) {
+          // Process each file match
+          for (const [_, fileName, codeInBlock, codeOutsideBlock] of fileMatches) {
+            if (!fileName.trim()) continue;
+            
+            const code = codeInBlock || codeOutsideBlock;
+            if (!code || !code.trim()) continue;
+            
+            console.log(`Adding file: ${fileName.trim()}`);
+            parsedFiles[fileName.trim()] = code.trim();
+          }
+          
+          console.log(`Manually extracted ${Object.keys(parsedFiles).length} files`);
+          
+          // Return the structured files
+          return NextResponse.json({ 
+            code: JSON.stringify({ files: parsedFiles }, null, 2),
+            message: 'Successfully generated prototype code (manually extracted)'
+          });
+        }
+        
+        // If we still can't parse it, return the raw text
+        console.warn('Failed to parse files from Claude response, returning raw text');
+        return NextResponse.json({ 
+          code: completion,
+          message: 'Generated code (raw format - JSON parsing failed)'
+        });
+      } catch (parseError) {
+        console.error('Error parsing Claude response:', parseError);
+        console.log('Raw Claude response:', completion);
+        
+        // Return the raw text as fallback
+        return NextResponse.json({ 
+          code: completion,
+          message: 'Generated code (raw format - parsing failed)'
+        });
       }
-      
-      // Helper function to fix common product-related errors
-      const fixProductReferences = (code: string): string => {
-        // Replace direct references to product with mockProductData
-        return code
-          .replace(/\{product\.([a-zA-Z0-9_]+)\}/g, '{mockProductData.$1}') // Replace {product.name} with {mockProductData.name}
-          .replace(/\(product\)/g, '(mockProductData)') // Replace function calls like addToCart(product)
-          .replace(/alt=\{product\.name\}/g, 'alt={mockProductData.name}') // Replace alt={product.name}
-          .replace(/src=\{product\.image\}/g, 'src={mockProductData.image}') // Replace src={product.image}
-          .replace(/\${product\.price/g, '${mockProductData.price'); // Replace ${product.price
-      };
-      
-      // Wrap the code in a proper React component to ensure it's safe to render
-      // by adding safety checks and default data
-      if (generatedCode.includes('export default') && 
-          (generatedCode.includes('product') || generatedCode.includes('Product')) && 
-          !generatedCode.includes('const product =') && 
-          !generatedCode.includes('mockProductData')) {
-        console.log('Adding safety wrapper for product data');
-        // Add mockProductData at the beginning of the file
-        generatedCode = `// Auto-generated component from Notion documentation
-import React from 'react';
-
-// Mock product data to prevent rendering errors
-const mockProductData = {
-  id: 1,
-  name: 'Product Name',
-  price: 29.99,
-  image: 'https://via.placeholder.com/300',
-  description: 'Product description goes here',
-  features: ['Feature 1', 'Feature 2', 'Feature 3'],
-  inStock: true,
-  rating: 4.5,
-  reviews: [
-    { id: 1, author: 'User 1', text: 'Great product!', rating: 5 },
-    { id: 2, author: 'User 2', text: 'Good value for money', rating: 4 }
-  ]
-};
-
-${fixProductReferences(generatedCode)}`;
-      }
-      
-      // Return the generated code
-      return NextResponse.json({ 
-        success: true,
-        code: generatedCode,
-        message: 'Code generated successfully',
-      });
     } catch (error: any) {
       console.error('Error generating code with Claude:', error);
       console.error('Error details:', JSON.stringify(error, null, 2));

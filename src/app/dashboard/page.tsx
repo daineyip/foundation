@@ -1,38 +1,67 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 
-interface ProjectCard {
+interface Project {
   id: string;
   name: string;
   description: string;
   status: 'draft' | 'deployed' | 'archived';
-  created: string;
-  updated: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-const mockProjects: ProjectCard[] = [
-  {
-    id: '1',
-    name: 'E-commerce Prototype',
-    description: 'Product listing and checkout flow prototype',
-    status: 'deployed',
-    created: '2023-04-01',
-    updated: '2023-04-05'
-  },
-  {
-    id: '2',
-    name: 'Task Management App',
-    description: 'To-do list with filtering and sorting',
-    status: 'draft',
-    created: '2023-04-10',
-    updated: '2023-04-10'
-  }
-];
-
 export default function Dashboard() {
-  const [projects, setProjects] = useState<ProjectCard[]>(mockProjects);
+  const { data: session, status: authStatus } = useSession();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Fetch projects when the user is authenticated
+    if (authStatus === 'authenticated') {
+      fetchProjects();
+    } else if (authStatus === 'unauthenticated') {
+      setIsLoading(false);
+    }
+  }, [authStatus]);
+
+  const fetchProjects = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch('/api/projects');
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch projects');
+      }
+      
+      const data = await response.json();
+      
+      // Format dates for display
+      const formattedProjects = data.projects.map((project: any) => ({
+        ...project,
+        createdAt: new Date(project.createdAt).toLocaleDateString(),
+        updatedAt: new Date(project.updatedAt).toLocaleDateString(),
+      }));
+      
+      setProjects(formattedProjects);
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+      setError('Failed to load projects');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (authStatus === 'loading') {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -48,9 +77,9 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-sm">
-          <h3 className="text-gray-500 text-sm font-medium">Recent Activity</h3>
+          <h3 className="text-gray-500 text-sm font-medium">Latest Update</h3>
           <p className="text-3xl font-bold">
-            {new Date().toLocaleDateString()}
+            {projects.length > 0 ? projects[0].updatedAt : 'N/A'}
           </p>
         </div>
       </div>
@@ -66,7 +95,21 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {projects.length > 0 ? (
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-gray-900"></div>
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 text-red-700 p-4 rounded-md">
+            <p>{error}</p>
+            <button 
+              onClick={() => { setError(null); fetchProjects(); }} 
+              className="text-sm underline mt-2"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : projects.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map((project) => (
               <div key={project.id} className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow">
@@ -83,8 +126,8 @@ export default function Dashboard() {
                   </div>
                   <p className="text-sm text-gray-600 mb-4">{project.description}</p>
                   <div className="flex justify-between text-xs text-gray-500">
-                    <span>Created: {project.created}</span>
-                    <span>Updated: {project.updated}</span>
+                    <span>Created: {project.createdAt}</span>
+                    <span>Updated: {project.updatedAt}</span>
                   </div>
                 </div>
                 <div className="bg-gray-50 px-4 py-2 border-t">
@@ -93,15 +136,25 @@ export default function Dashboard() {
                       href={`/dashboard/editor/${project.id}`}
                       className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                     >
-                      View Details
+                      View Code
                     </Link>
-                    {project.status === 'deployed' && (
+                    {project.status === 'deployed' ? (
                       <Link
                         href={`/dashboard/analytics/${project.id}`}
                         className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                       >
                         Analytics
                       </Link>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          // Will implement deployment later
+                          alert('Deployment feature coming soon!');
+                        }}
+                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                      >
+                        Deploy
+                      </button>
                     )}
                   </div>
                 </div>

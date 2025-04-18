@@ -62,31 +62,36 @@ export const getNotionPages = async (apiKey: string): Promise<NotionPage[]> => {
       }
     });
 
-    // Transform API response to our interface
-    const pages: NotionPage[] = response.results.map((page: any) => {
-      let title = 'Untitled';
-      
-      // Extract title from properties (different formats based on page type)
-      if (page.properties && page.properties.title) {
-        const titleProperty = page.properties.title;
-        if (titleProperty.title && titleProperty.title.length > 0) {
-          title = titleProperty.title.map((t: any) => t.plain_text).join('');
+    // Transform API response to our interface and filter out subpages
+    const pages: NotionPage[] = response.results
+      .filter((page: any) => {
+        // Filter out pages that are subpages (they have a parent property)
+        return !page.parent || page.parent.type !== 'page_id';
+      })
+      .map((page: any) => {
+        let title = 'Untitled';
+        
+        // Extract title from properties (different formats based on page type)
+        if (page.properties && page.properties.title) {
+          const titleProperty = page.properties.title;
+          if (titleProperty.title && titleProperty.title.length > 0) {
+            title = titleProperty.title.map((t: any) => t.plain_text).join('');
+          }
+        } else if (page.properties && page.properties.Name) {
+          const nameProperty = page.properties.Name;
+          if (nameProperty.title && nameProperty.title.length > 0) {
+            title = nameProperty.title.map((t: any) => t.plain_text).join('');
+          }
         }
-      } else if (page.properties && page.properties.Name) {
-        const nameProperty = page.properties.Name;
-        if (nameProperty.title && nameProperty.title.length > 0) {
-          title = nameProperty.title.map((t: any) => t.plain_text).join('');
-        }
-      }
 
-      return {
-        id: page.id,
-        title: title,
-        icon: page.icon ? page.icon.emoji || page.icon.external?.url : undefined,
-        lastEdited: page.last_edited_time,
-        url: page.url
-      };
-    });
+        return {
+          id: page.id,
+          title: title,
+          icon: page.icon ? page.icon.emoji || page.icon.external?.url : undefined,
+          lastEdited: page.last_edited_time,
+          url: page.url
+        };
+      });
 
     return pages;
   } catch (error) {

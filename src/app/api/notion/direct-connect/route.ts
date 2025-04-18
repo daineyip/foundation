@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server';
 import { Client } from '@notionhq/client';
 import { createApiKey } from '@/lib/services/apiKeyService';
+import { auth } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
-    // For NextAuth v5, we would typically use auth() instead of getServerSession
-    // This is a simplified implementation that just mocks a session
-    const session = { user: { id: 'test-user-id' } };
+    // Get authenticated user from session
+    const session = await auth() || { user: null };
+    const user = session.user;
     
     // Check if user is authenticated
-    if (!session || !session.user) {
+    if (!user || !user.id) {
       return NextResponse.json(
         { error: 'You must be logged in to connect to Notion' },
         { status: 401 }
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
           name: 'Notion Integration',
           service: 'notion',
           key: apiKey,
-          userId: session.user.id,
+          userId: user.id,
         });
       } catch (dbError) {
         console.error('Error storing API key:', dbError);

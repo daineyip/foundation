@@ -1,46 +1,24 @@
 import { NextResponse } from 'next/server';
 import { getNotionPages } from '@/lib/api/notion';
-import { getActiveApiKeyForService } from '@/lib/services/apiKeyService';
 
 export async function POST(request: Request) {
   try {
-    // For NextAuth v5, we would typically use auth() instead of getServerSession
-    // This is a simplified implementation that just mocks a session
-    const session = { user: { id: 'test-user-id' } };
+    // Get Notion API key from environment
+    const notionApiKey = process.env.NOTION_API_KEY;
     
-    // Check if user is authenticated
-    if (!session || !session.user) {
+    if (!notionApiKey) {
       return NextResponse.json(
-        { error: 'You must be logged in to access Notion pages' },
+        { error: 'Notion API key not found in environment variables' },
         { status: 401 }
       );
     }
     
-    // Get API key from request body (for direct connection)
-    // or from the database (for stored connection)
-    const body = await request.json();
-    let apiKey = body.apiKey;
-    
-    if (!apiKey) {
-      try {
-        // Try to get the API key from the database
-        apiKey = await getActiveApiKeyForService(session.user.id, 'notion');
-      } catch (error) {
-        console.error('Error fetching API key from database:', error);
-        // Continue with null apiKey to handle the error below
-      }
-      
-      if (!apiKey) {
-        return NextResponse.json(
-          { error: 'No Notion API key found. Please connect your workspace first.' },
-          { status: 401 }
-        );
-      }
-    }
+    // Log API key validation (mask for security)
+    console.log('Using Notion API key:', notionApiKey.substring(0, 7) + '...' + notionApiKey.substring(notionApiKey.length - 4));
     
     // Fetch pages from Notion using our client
     try {
-      const pages = await getNotionPages(apiKey);
+      const pages = await getNotionPages(notionApiKey);
       return NextResponse.json({ pages });
     } catch (error: any) {
       console.error('Error fetching Notion pages:', error);
@@ -48,7 +26,7 @@ export async function POST(request: Request) {
       // Provide more detailed error message
       let errorMessage = 'Failed to fetch Notion pages';
       if (error.status === 401) {
-        errorMessage = 'Invalid Notion API key. Please reconnect your workspace.';
+        errorMessage = 'Invalid Notion API key. Please check your environment variables.';
       } else if (error.status === 403) {
         errorMessage = 'Your Notion API key does not have sufficient permissions.';
       } else if (error.message) {
