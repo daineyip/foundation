@@ -317,6 +317,11 @@ export async function POST(request: Request) {
         }
       }
       
+      IMPORTANT: You MUST include a "README.md" file in the "files" dictionary. This file should contain a detailed description of the project, including:
+      - The technologies used
+      - A step-by-step guide for setting up the project and project dependencies
+      - All the commands to install the project dependencies and run the project
+      
       The JSON object should have a single "files" property containing a dictionary where:
       - Each key is a file path (relative to the project root)
       - Each value is the complete file content as a string with proper escaping
@@ -353,6 +358,11 @@ export async function POST(request: Request) {
           "components/ProductList.tsx": "import React from 'react';\n\nexport interface Product {\n  id: string;\n  name: string;\n  price: number;\n}\n\nexport default function ProductList() {\n  return <div>Products will be listed here</div>;\n}"
         }
       }
+
+      IMPORTANT: You MUST include a "README.md" file in the "files" dictionary. This file should contain a detailed description of the project, including:
+      - The technologies used
+      - A step-by-step guide for setting up the project and project dependencies
+      - All the commands to install the project dependencies and run the project
       
       Your response MUST:
       1. Be valid JSON that can be parsed with JSON.parse()
@@ -377,6 +387,9 @@ export async function POST(request: Request) {
       });
       
       console.log('Claude response received', JSON.stringify(response.id));
+
+      console.log('Claude system prompt:', systemPrompt);
+      console.log('Claude user prompt:', userPrompt);
       
       // Extract the generated code from Claude's response
       // The content field is an array of content blocks
